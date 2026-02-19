@@ -1,0 +1,81 @@
+name: Encode Binaries to Base64
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '*.tar.xz'
+      - '*.tar.gz'
+
+jobs:
+  encode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Encode binaries to base64
+        run: |
+          # ARM64 binary (7.8 MB)
+          if [ -f shadowsocks-v1.24.0.aarch64-unknown-linux-musl.tar.xz ]; then
+            base64 -w 0 shadowsocks-v1.24.0.aarch64-unknown-linux-musl.tar.xz > shadowsocks-v1.24.0.aarch64.tar.xz.b64
+            echo "✅ Encoded ARM64 binary: $(wc -c < shadowsocks-v1.24.0.aarch64.tar.xz.b64) bytes"
+          fi
+          
+          # Source tarball (507 KB)
+          if [ -f shadowsocks-rust-1.24.0.tar.gz ]; then
+            base64 -w 0 shadowsocks-rust-1.24.0.tar.gz > shadowsocks-rust-1.24.0.tar.gz.b64
+            echo "✅ Encoded source: $(wc -c < shadowsocks-rust-1.24.0.tar.gz.b64) bytes"
+          fi
+          
+          # Create README
+          cat > README-BASE64.md << 'EOF'
+# Shadowsocks-Rust v1.24.0 Base64 Encoded Binaries
+
+For E2B sandbox transfer via GitHub MCP.
+
+## Files
+
+- `shadowsocks-v1.24.0.aarch64.tar.xz.b64` - ARM64 binary (base64)
+- `shadowsocks-rust-1.24.0.tar.gz.b64` - Source code (base64)
+
+## Decode in Sandbox
+
+```python
+import base64
+
+# Read base64 content via GitHub MCP
+with open('shadowsocks-v1.24.0.aarch64.tar.xz.b64', 'r') as f:
+    b64_data = f.read()
+
+# Decode
+binary_data = base64.b64decode(b64_data)
+
+# Write
+with open('/home/user/shadowsocks.tar.xz', 'wb') as f:
+    f.write(binary_data)
+
+# Extract
+import subprocess
+subprocess.run(['tar', '-xJf', '/home/user/shadowsocks.tar.xz', '-C', '/home/user/'])
+```
+
+## Why Base64?
+
+- GitHub MCP can read text files of any size
+- Binary files >1MB return only SHA
+- Base64 overhead: ~33% (7.8 MB → 10.4 MB)
+- No network access needed in sandbox
+EOF
+      
+      - name: Commit base64 files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add *.b64 README-BASE64.md 2>/dev/null || true
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: add base64-encoded binaries for sandbox transfer"
+            git push
+          fi
